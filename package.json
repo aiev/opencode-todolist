@@ -1,0 +1,42 @@
+{
+  "name": "opencode-todolist",
+  "version": "0.1.0",
+  "description": "OpenCode V2 plugin restoring session todo list tools (todowrite/todoread)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "todo",
+    "todowrite",
+    "todoread"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aiev/opencode-todolist.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@opencode/plugin": "^2.0.12",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.8.0"
+  }
+}
