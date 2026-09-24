@@ -50,15 +50,16 @@ Example output:
 
 ## Sidebar
 
-The terminal client shows a live todo strip at the end of the session sidebar while any task is still open:
+The terminal client shows a live todo strip at the end of the session sidebar, styled like the V1 sidebar todo list:
 
 ```
-Todos · 1/2 open
-[•] Validar pacote publicado · high
-[x] Escrever changelog
+Todo
+[ ] Fix flaky checkout spec
+[•] Refactor payment webhook handler
+[✓] Add regression test
 ```
 
-In-progress tasks use the theme accent, completed and cancelled tasks are muted, and high-priority open tasks use the warning color. The strip hides itself once nothing is left open.
+In-progress tasks use the warning color and everything else is muted, matching OpenCode V1. Long items wrap, lists longer than two items collapse with a click, and the strip hides itself once everything is completed.
 
 To enable it, add the package to the terminal client plugin list:
 

@@ -1,25 +1,40 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show } from "solid-js"
+import { createSignal, For, Show } from "solid-js"
 import type { Plugin } from "@opencode/plugin/tui"
-import { hasOpenTodos, STATUS_MARK, type Todo, type TodoPriority } from "./todos.js"
+import type { Todo, TodoStatus } from "./todos.js"
 import { latestTodosFromMessages } from "./tui-data.js"
 
-const MAX_VISIBLE = 8
+const COLLAPSE_THRESHOLD = 2
 
-function prioritySuffix(priority: TodoPriority | undefined): string {
-  return priority ? ` · ${priority}` : ""
+/** V1 glyphs: ✓ completed, • in progress, blank otherwise. */
+function mark(status: TodoStatus): string {
+  if (status === "completed") return "✓"
+  if (status === "in_progress") return "•"
+  return " "
 }
 
-function colorOf(context: Plugin.Context, todo: Todo) {
-  const theme = context.theme
-  if (todo.status === "completed" || todo.status === "cancelled") return theme.text.muted
-  if (todo.status === "in_progress") return theme.text.feedback.info.base
-  if (todo.priority === "high") return theme.text.feedback.warning.base
-  return theme.text.base
+function TodoRow(props: { context: Plugin.Context; todo: Todo }) {
+  const color = () =>
+    props.todo.status === "in_progress"
+      ? props.context.theme.text.feedback.warning.base
+      : props.context.theme.text.muted
+
+  return (
+    <box flexDirection="row" gap={0}>
+      <text flexShrink={0} style={{ fg: color() }}>
+        {`[${mark(props.todo.status)}] `}
+      </text>
+      <text flexGrow={1} wrapMode="word" style={{ fg: color() }}>
+        {props.todo.content}
+      </text>
+    </box>
+  )
 }
 
-/** Compact todo list rendered at the end of the session sidebar while any task is open. */
+/** V1-parity todo list at the end of the sidebar. */
 function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
+  const [open, setOpen] = createSignal(true)
+
   const todos = () => {
     try {
       return latestTodosFromMessages(props.context.data.session.message.list(props.sessionID)) ?? []
@@ -27,32 +42,22 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
       return []
     }
   }
-  const openCount = () => todos().filter((todo) => todo.status === "pending" || todo.status === "in_progress").length
-  const visible = () => todos().slice(0, MAX_VISIBLE)
-  const overflow = () => Math.max(0, todos().length - MAX_VISIBLE)
+  const show = () => todos().length > 0 && todos().some((todo) => todo.status !== "completed")
+  const collapsible = () => todos().length > COLLAPSE_THRESHOLD
 
   return (
-    <Show when={hasOpenTodos(todos())}>
-      <box flexDirection="column" gap={0} paddingLeft={1} paddingRight={1}>
-        <text>
-          <span style={{ fg: props.context.theme.text.muted }}>
-            {`Todos · ${openCount()}/${todos().length} open`}
-          </span>
-        </text>
-        <For each={visible()}>
-          {(todo) => (
-            <text>
-              <span style={{ fg: colorOf(props.context, todo) }}>{`${STATUS_MARK[todo.status]} ${todo.content}`}</span>
-              <Show when={todo.priority}>
-                <span style={{ fg: props.context.theme.text.muted }}>{prioritySuffix(todo.priority)}</span>
-              </Show>
-            </text>
-          )}
-        </For>
-        <Show when={overflow() > 0}>
-          <text>
-            <span style={{ fg: props.context.theme.text.muted }}>{`… ${overflow()} more`}</span>
+    <Show when={show()}>
+      <box flexDirection="column" gap={0}>
+        <box flexDirection="row" gap={1} onMouseDown={() => collapsible() && setOpen((value) => !value)}>
+          <Show when={collapsible()}>
+            <text fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
+          </Show>
+          <text fg={props.context.theme.text.base}>
+            <b>Todo</b>
           </text>
+        </box>
+        <Show when={!collapsible() || open()}>
+          <For each={todos()}>{(todo) => <TodoRow context={props.context} todo={todo} />}</For>
         </Show>
       </box>
     </Show>
