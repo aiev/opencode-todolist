@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "strict": true,
     "noEmit": true,
     "declaration": true,

@@ -48,6 +48,27 @@ Example output:
 
 `todowrite` always receives the complete list and replaces the previous one. Passing `{"todos": []}` clears it.
 
+## Sidebar
+
+The terminal client shows a live todo strip at the end of the session sidebar while any task is still open:
+
+```
+Todos · 1/2 open
+[•] Validar pacote publicado · high
+[x] Escrever changelog
+```
+
+In-progress tasks use the theme accent, completed and cancelled tasks are muted, and high-priority open tasks use the warning color. The strip hides itself once nothing is left open.
+
+To enable it, add the package to the terminal client plugin list:
+
+```json
+// ~/.config/opencode/cli.json
+{
+  "plugins": ["opencode-todolist"]
+}
+```
+
 ## Development
 
 ```bash
