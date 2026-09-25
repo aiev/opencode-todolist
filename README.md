@@ -54,7 +54,7 @@ The terminal client shows a live todo strip at the end of the session sidebar, s
 
 ```
 ▼ Todo [1/3] · 33%
-────────────
+────────────────────────
 [ ] Fix flaky checkout spec
 [•] Refactor payment webhook handler
 [✓] Add regression test

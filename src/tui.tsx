@@ -69,7 +69,7 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
           </text>
         </box>
         <Show when={display().gap > 0}>
-          <text fg={props.context.theme.text.muted}>{"─".repeat(12)}</text>
+          <box height={1} border={["top"]} borderColor={props.context.theme.text.muted} />
         </Show>
         <Show when={display().gap > 1}>
           <box height={display().gap - 1} />
