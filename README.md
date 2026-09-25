@@ -53,15 +53,24 @@ Example output:
 The terminal client shows a live todo strip at the end of the session sidebar, styled like the V1 sidebar todo list:
 
 ```
-Todo
+▼ Todo [1/3] · 33%
 [ ] Fix flaky checkout spec
 [•] Refactor payment webhook handler
 [✓] Add regression test
 ```
 
-In-progress tasks use the warning color and everything else is muted, matching OpenCode V1. Long items wrap, lists longer than two items collapse with a click, and the strip hides itself once everything is completed.
+In-progress tasks use the warning color and everything else is muted, matching OpenCode V1. The heading shows completed/total and the percentage; either part can be turned off. Long items wrap, lists longer than two items collapse with a click, and the strip hides itself once everything is completed.
 
-To enable it, add the package to the terminal client plugin list:
+Run `/todo-sections` (or pick "Todolist: Settings" from the command palette) to configure:
+
+| Setting | Default | Values |
+| --- | --- | --- |
+| Show count | on | on/off |
+| Show percentage | on | on/off |
+| Header gap | 1 | 0/1/2 |
+| Collapse threshold | 2 | 2/3/5 |
+
+To enable the strip, add the package to the terminal client plugin list:
 
 ```json
 // ~/.config/opencode/cli.json

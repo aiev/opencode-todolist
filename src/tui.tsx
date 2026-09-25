@@ -2,9 +2,13 @@
 import { createSignal, For, Show } from "solid-js"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { Todo, TodoStatus } from "./todos.js"
-import { latestTodosFromMessages } from "./tui-data.js"
-
-const COLLAPSE_THRESHOLD = 2
+import { headerLabel, latestTodosFromMessages } from "./tui-data.js"
+import {
+  normalizeSettings,
+  openSettingsMenu,
+  SETTINGS_KEY,
+  type TodoDisplaySettings,
+} from "./tui-settings.js"
 
 /** V1 glyphs: ✓ completed, • in progress, blank otherwise. */
 function mark(status: TodoStatus): string {
@@ -31,9 +35,10 @@ function TodoRow(props: { context: Plugin.Context; todo: Todo }) {
   )
 }
 
-/** V1-parity todo list at the end of the sidebar. */
-function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
+/** V1-parity todo list at the end of the sidebar, with configurable heading. */
+function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings: TodoDisplaySettings }) {
   const [open, setOpen] = createSignal(true)
+  const display = () => normalizeSettings(props.settings)
 
   const todos = () => {
     try {
@@ -43,7 +48,7 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
     }
   }
   const show = () => todos().length > 0 && todos().some((todo) => todo.status !== "completed")
-  const collapsible = () => todos().length > COLLAPSE_THRESHOLD
+  const collapsible = () => todos().length > display().collapseThreshold
 
   return (
     <Show when={show()}>
@@ -53,9 +58,12 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
             <text fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
           </Show>
           <text fg={props.context.theme.text.base}>
-            <b>Todo</b>
+            <b>{headerLabel(todos(), display())}</b>
           </text>
         </box>
+        <Show when={display().gap > 0}>
+          <box height={display().gap} />
+        </Show>
         <Show when={!collapsible() || open()}>
           <For each={todos()}>{(todo) => <TodoRow context={props.context} todo={todo} />}</For>
         </Show>
@@ -64,13 +72,44 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string }) {
   )
 }
 
+/** Settings command lives in the app slot so it stays available when the sidebar is hidden. */
+function SettingsRoot(props: {
+  context: Plugin.Context
+  settings: TodoDisplaySettings
+  update: (mutation: (draft: TodoDisplaySettings) => void) => Promise<void>
+}) {
+  props.context.keymap.layer(() => ({
+    mode: "global" as const,
+    commands: [
+      {
+        id: "aiev.todolist.settings",
+        title: "Todolist: Settings",
+        description: "Configure the sidebar todo list",
+        slash: { name: "todo-sections" },
+        palette: true,
+        run: () => openSettingsMenu(props.context, props.settings, props.update),
+      },
+    ],
+  }))
+  return null
+}
+
 const mod: Plugin.Definition = {
   id: "aiev.todolist.tui",
 
   setup(context) {
+    const [settings, updateSettings] = context.storage.store<TodoDisplaySettings>(SETTINGS_KEY, {
+      initial: normalizeSettings(undefined),
+    })
+
+    context.ui.slot({
+      append: "app",
+      render: () => <SettingsRoot context={context} settings={settings} update={updateSettings} />,
+    })
+
     context.ui.slot({
       append: "sidebar.content",
-      render: (props) => <TodoStrip context={context} sessionID={props.sessionID} />,
+      render: (props) => <TodoStrip context={context} sessionID={props.sessionID} settings={settings} />,
     })
   },
 }

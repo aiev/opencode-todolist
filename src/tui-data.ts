@@ -1,4 +1,5 @@
 import { normalizeTodos, type Todo } from "./todos.js"
+import type { TodoDisplaySettings } from "./tui-settings.js"
 
 type ToolPart = {
   type?: unknown
@@ -31,4 +32,21 @@ export function latestTodosFromMessages(messages: ReadonlyArray<unknown> | undef
     }
   }
   return latest
+}
+
+/**
+ * Builds the strip heading: `Todo [done/total] · NN%`, dropping either part
+ * according to the display settings and falling back to plain `Todo`.
+ */
+export function headerLabel(
+  todos: ReadonlyArray<Todo>,
+  display: Pick<TodoDisplaySettings, "count" | "percent">,
+): string {
+  const total = todos.length
+  const done = todos.filter((todo) => todo.status === "completed").length
+  const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+  const parts: Array<string> = []
+  if (display.count) parts.push(`[${done}/${total}]`)
+  if (display.percent) parts.push(`${percent}%`)
+  return parts.length === 0 ? "Todo" : `Todo ${parts.join(" · ")}`
 }
