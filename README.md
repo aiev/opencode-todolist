@@ -54,6 +54,7 @@ The terminal client shows a live todo strip at the end of the session sidebar, s
 
 ```
 ▼ Todo [1/3] · 33%
+────────────
 [ ] Fix flaky checkout spec
 [•] Refactor payment webhook handler
 [✓] Add regression test
@@ -67,8 +68,9 @@ Run `/todo-sections` (or pick "Todolist: Settings" from the command palette) to 
 | --- | --- | --- |
 | Show count | on | on/off |
 | Show percentage | on | on/off |
-| Header gap | 1 | 0/1/2 |
+| Header separator | line | none / line / line + blank |
 | Collapse threshold | 2 | 2/3/5 |
+| Border | off | on/off |
 
 To enable the strip, add the package to the terminal client plugin list:
 

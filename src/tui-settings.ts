@@ -5,6 +5,7 @@ export type TodoDisplaySettings = {
   percent: boolean
   gap: 0 | 1 | 2
   collapseThreshold: 2 | 3 | 5
+  border: boolean
 }
 
 export const DEFAULT_SETTINGS: TodoDisplaySettings = {
@@ -12,6 +13,7 @@ export const DEFAULT_SETTINGS: TodoDisplaySettings = {
   percent: true,
   gap: 1,
   collapseThreshold: 2,
+  border: false,
 }
 
 export const SETTINGS_KEY = "aiev.todolist.settings"
@@ -32,11 +34,19 @@ export function normalizeSettings(value: unknown): TodoDisplaySettings {
     collapseThreshold: THRESHOLD_VALUES.includes(raw.collapseThreshold as TodoDisplaySettings["collapseThreshold"])
       ? (raw.collapseThreshold as TodoDisplaySettings["collapseThreshold"])
       : DEFAULT_SETTINGS.collapseThreshold,
+    border: typeof raw.border === "boolean" ? raw.border : DEFAULT_SETTINGS.border,
   }
 }
 
 const nextTick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 const onOff = (value: boolean) => (value ? "on" : "off")
+
+/** Human-readable label for the header separator setting. */
+export function gapLabel(gap: TodoDisplaySettings["gap"]): string {
+  if (gap === 0) return "none"
+  if (gap === 1) return "line"
+  return "line + blank"
+}
 
 /**
  * Native settings menu: each pick applies and persists immediately, then the
@@ -54,8 +64,9 @@ export function openSettingsMenu(
         options: [
           { title: `Show count: ${onOff(settings.count)}`, value: "count" },
           { title: `Show percentage: ${onOff(settings.percent)}`, value: "percent" },
-          { title: `Header gap: ${settings.gap}`, value: "gap" },
+          { title: `Header separator: ${gapLabel(settings.gap)}`, value: "gap" },
           { title: `Collapse threshold: ${settings.collapseThreshold}`, value: "threshold" },
+          { title: `Border: ${onOff(settings.border)}`, value: "border" },
         ],
       })
       if (choice === undefined) return
@@ -70,8 +81,11 @@ export function openSettingsMenu(
         })
       } else if (choice === "gap") {
         const picked = await context.ui.dialog.select<TodoDisplaySettings["gap"]>({
-          title: "Header gap",
-          options: GAP_VALUES.map((value) => ({ title: String(value), value })),
+          title: "Header separator",
+          options: GAP_VALUES.map((value) => ({
+            title: value === 0 ? "none" : value === 1 ? "────" : "──── + blank",
+            value,
+          })),
           current: settings.gap,
         })
         if (picked !== undefined) {
@@ -90,6 +104,10 @@ export function openSettingsMenu(
             draft.collapseThreshold = picked
           })
         }
+      } else if (choice === "border") {
+        await update((draft) => {
+          draft.border = !draft.border
+        })
       }
 
       await nextTick()

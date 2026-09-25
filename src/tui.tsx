@@ -52,7 +52,14 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
 
   return (
     <Show when={show()}>
-      <box flexDirection="column" gap={0}>
+      <box
+        flexDirection="column"
+        gap={0}
+        border={display().border}
+        {...(display().border ? { borderColor: props.context.theme.text.muted } : {})}
+        paddingLeft={display().border ? 1 : 0}
+        paddingRight={display().border ? 1 : 0}
+      >
         <box flexDirection="row" gap={1} onMouseDown={() => collapsible() && setOpen((value) => !value)}>
           <Show when={collapsible()}>
             <text fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
@@ -62,7 +69,10 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
           </text>
         </box>
         <Show when={display().gap > 0}>
-          <box height={display().gap} />
+          <text fg={props.context.theme.text.muted}>{"─".repeat(12)}</text>
+        </Show>
+        <Show when={display().gap > 1}>
+          <box height={display().gap - 1} />
         </Show>
         <Show when={!collapsible() || open()}>
           <For each={todos()}>{(todo) => <TodoRow context={props.context} todo={todo} />}</For>
