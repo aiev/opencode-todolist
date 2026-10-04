@@ -10,10 +10,48 @@ type ToolDef = {
 
 type ContextHook = (event: { sessionID: string; system: Array<{ type: string; text: string }> }) => Promise<void> | void
 
+function fakeEvents() {
+  const queue: Array<unknown> = []
+  let wake: (() => void) | undefined
+  let closed = false
+  const signalDone = () => {
+    closed = true
+    wake?.()
+    wake = undefined
+  }
+  const subscribe = (options?: { signal?: AbortSignal }) => {
+    options?.signal?.addEventListener("abort", signalDone)
+    return {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            while (queue.length === 0 && !closed) {
+              await new Promise<void>((resolve) => {
+                wake = resolve
+              })
+            }
+            if (queue.length === 0) return { value: undefined, done: true }
+            return { value: queue.shift(), done: false }
+          },
+        }
+      },
+    }
+  }
+  return {
+    subscribe,
+    emit(event: unknown) {
+      queue.push(event)
+      wake?.()
+      wake = undefined
+    },
+  }
+}
+
 function fakeContext() {
   const tools = new Map<string, ToolDef>()
   const hooks = new Map<string, ContextHook>()
   const storage = new Map<string, unknown>()
+  const events = fakeEvents()
 
   const editor = {
     add: (tool: ToolDef) => tools.set(tool.name, tool),
@@ -37,6 +75,9 @@ function fakeContext() {
         return { dispose: async () => {} }
       },
     },
+    event: {
+      subscribe: events.subscribe,
+    },
     storage: {
       get: async (key: string) => storage.get(key),
       set: async (key: string, value: unknown) => {
@@ -49,7 +90,7 @@ function fakeContext() {
     },
   } as unknown as Plugin.Context
 
-  return { context, tools, hooks, storage }
+  return { context, tools, hooks, storage, events }
 }
 
 test("setup registers todowrite and todoread", async () => {
@@ -146,5 +187,24 @@ test("todoread reports the total when the run finishes", async () => {
     assert.match(output.content ?? "", /\[x\] A/)
   } finally {
     mock.timers.reset()
+  }
+})
+
+test("session.deleted removes the stored list for that session", async () => {
+  const fake = fakeContext()
+  const dispose = (await plugin.setup(fake.context)) as () => Promise<void>
+  try {
+    await fake.tools.get("todowrite")!.execute({ todos: [{ content: "A", status: "pending" }] }, { sessionID: "ses_1" })
+    assert.ok(fake.storage.has("todos/ses_1"))
+
+    fake.events.emit({ type: "session.created", data: { sessionID: "ses_1" } })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.ok(fake.storage.has("todos/ses_1"))
+
+    fake.events.emit({ type: "session.deleted", data: { sessionID: "ses_1" }, durable: { aggregateID: "ses_1" } })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(fake.storage.has("todos/ses_1"), false)
+  } finally {
+    await dispose()
   }
 })

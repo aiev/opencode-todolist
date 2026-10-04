@@ -116,7 +116,26 @@ const plugin: Plugin.Plugin = {
       })
     })
 
+    // Drop the stored list when its session is deleted. Records are tiny, so a
+    // startup sweep is unnecessary; the event covers deletions while running.
+    const deleted = new AbortController()
+    const cleanup = (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: deleted.signal })) {
+          if (event.type !== "session.deleted") continue
+          const sessionID = event.data?.sessionID ?? event.durable?.aggregateID
+          if (sessionID) await ctx.storage.remove(storageKey(sessionID))
+        }
+      } catch (error) {
+        if (!deleted.signal.aborted) {
+          console.warn("[aiev.todolist] session.deleted listener stopped:", error)
+        }
+      }
+    })()
+
     return async () => {
+      deleted.abort()
+      await cleanup
       await context.dispose()
       await tools.dispose()
     }
