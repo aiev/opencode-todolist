@@ -9,6 +9,10 @@ OpenCode V2 removed the built-in todo tools. This plugin brings them back as a s
 
 Lists are stored per session and a compact summary is injected into the session context on every model request while tasks are still open, so the model keeps track of them across long conversations and context compaction.
 
+## Screenshot
+
+![Todo sidebar strip showing 7/7 tasks completed, 100% and a total run time](https://raw.githubusercontent.com/aiev/opencode-todolist/master/assets/todo-sidebar.png)
+
 ## Install
 
 ```bash
