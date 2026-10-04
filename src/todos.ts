@@ -1,3 +1,5 @@
+import type { TimingState, TodoItemTiming, TodoRunTiming } from "./timing.js"
+
 export type TodoStatus = "pending" | "in_progress" | "completed" | "cancelled"
 export type TodoPriority = "high" | "medium" | "low"
 
@@ -10,6 +12,7 @@ export type Todo = {
 export type TodoRecord = {
   todos: Array<Todo>
   updatedAt: number
+  timing?: TimingState
 }
 
 export const TODO_STATUSES: ReadonlyArray<TodoStatus> = ["pending", "in_progress", "completed", "cancelled"]
@@ -63,15 +66,20 @@ export function normalizeTodos(input: unknown): Array<Todo> {
   })
 }
 
-/** Renders a todo list as plain text for tool output and context injection. */
-export function renderTodos(todos: Array<Todo>): string {
+/**
+ * Renders a todo list as plain text for tool output and context injection.
+ * An optional `suffix` appends per-task detail such as a measured duration.
+ */
+export function renderTodos(todos: Array<Todo>, suffix?: (todo: Todo) => string | undefined): string {
   if (todos.length === 0) {
     return "(the todo list is empty)"
   }
   return todos
     .map((todo, index) => {
       const priority = todo.priority ? ` — ${todo.priority} priority` : ""
-      return `${index + 1}. ${STATUS_MARK[todo.status]} ${todo.content}${priority}`
+      const detail = suffix?.(todo)
+      const extra = detail ? ` — ${detail}` : ""
+      return `${index + 1}. ${STATUS_MARK[todo.status]} ${todo.content}${priority}${extra}`
     })
     .join("\n")
 }
@@ -79,7 +87,7 @@ export function renderTodos(todos: Array<Todo>): string {
 /** Reads a stored record defensively; returns undefined when the value is unusable. */
 export function parseTodoRecord(value: unknown): TodoRecord | undefined {
   if (value === null || typeof value !== "object") return undefined
-  const stored = value as { todos?: unknown; updatedAt?: unknown }
+  const stored = value as { todos?: unknown; updatedAt?: unknown; timing?: unknown }
   if (!Array.isArray(stored.todos)) return undefined
   const todos: Array<Todo> = []
   for (const entry of stored.todos) {
@@ -92,7 +100,48 @@ export function parseTodoRecord(value: unknown): TodoRecord | undefined {
     }
     todos.push(todo)
   }
-  return { todos, updatedAt: typeof stored.updatedAt === "number" ? stored.updatedAt : 0 }
+  const record: TodoRecord = {
+    todos,
+    updatedAt: typeof stored.updatedAt === "number" ? stored.updatedAt : 0,
+  }
+  const timing = parseTimingState(stored.timing)
+  if (timing) record.timing = timing
+  return record
+}
+
+/** Reads a stored timing state defensively; returns undefined when unusable. */
+export function parseTimingState(value: unknown): TimingState | undefined {
+  if (value === null || typeof value !== "object") return undefined
+  const stored = value as { current?: unknown; last?: unknown }
+  const current = parseRun(stored.current)
+  const last = parseRun(stored.last)
+  if (!current && !last) return undefined
+  const state: TimingState = {}
+  if (current) state.current = current
+  if (last) state.last = last
+  return state
+}
+
+function parseRun(value: unknown): TodoRunTiming | undefined {
+  if (value === null || typeof value !== "object") return undefined
+  const stored = value as { startedAt?: unknown; endedAt?: unknown; abandoned?: unknown; items?: unknown }
+  if (typeof stored.startedAt !== "number") return undefined
+  const items: Array<TodoItemTiming> = []
+  if (Array.isArray(stored.items)) {
+    for (const entry of stored.items) {
+      if (entry === null || typeof entry !== "object") continue
+      const raw = entry as { content?: unknown; status?: unknown; startedAt?: unknown; completedAt?: unknown }
+      if (typeof raw.content !== "string" || !TODO_STATUSES.includes(raw.status as TodoStatus)) continue
+      const item: TodoItemTiming = { content: raw.content, status: raw.status as TodoStatus }
+      if (typeof raw.startedAt === "number") item.startedAt = raw.startedAt
+      if (typeof raw.completedAt === "number") item.completedAt = raw.completedAt
+      items.push(item)
+    }
+  }
+  const run: TodoRunTiming = { startedAt: stored.startedAt, items }
+  if (typeof stored.endedAt === "number") run.endedAt = stored.endedAt
+  if (stored.abandoned === true) run.abandoned = true
+  return run
 }
 
 export function hasOpenTodos(todos: Array<Todo>): boolean {

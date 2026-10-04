@@ -50,6 +50,14 @@ test("renderTodos reports an empty list", () => {
   assert.match(renderTodos([]), /empty/)
 })
 
+test("renderTodos appends an optional per-task suffix", () => {
+  const list = renderTodos(
+    [{ content: "Done", status: "completed", priority: "high" }],
+    (todo) => (todo.status === "completed" ? "3m" : undefined),
+  )
+  assert.equal(list, "1. [x] Done — high priority — 3m")
+})
+
 test("hasOpenTodos only counts pending and in progress", () => {
   assert.equal(hasOpenTodos([]), false)
   assert.equal(hasOpenTodos([{ content: "a", status: "completed" }]), false)
@@ -73,4 +81,19 @@ test("parseTodoRecord survives garbage and keeps valid entries", () => {
     todos: [{ content: "ok", status: "pending", priority: "medium" }],
     updatedAt: 123,
   })
+})
+
+test("parseTodoRecord keeps a valid timing state", () => {
+  const record = parseTodoRecord({
+    todos: [{ content: "ok", status: "pending" }],
+    updatedAt: 5,
+    timing: { current: { startedAt: 1, items: [{ content: "ok", status: "pending", startedAt: 1 }] } },
+  })
+  assert.equal(record?.timing?.current?.startedAt, 1)
+  assert.deepEqual(record?.timing?.current?.items, [{ content: "ok", status: "pending", startedAt: 1 }])
+})
+
+test("parseTodoRecord drops unusable timing", () => {
+  const record = parseTodoRecord({ todos: [], updatedAt: 0, timing: { current: { startedAt: "x" } } })
+  assert.equal(record?.timing, undefined)
 })

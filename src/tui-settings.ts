@@ -3,6 +3,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 export type TodoDisplaySettings = {
   count: boolean
   percent: boolean
+  timer: boolean
   gap: 0 | 1 | 2
   collapseThreshold: 2 | 3 | 5
   border: boolean
@@ -11,6 +12,7 @@ export type TodoDisplaySettings = {
 export const DEFAULT_SETTINGS: TodoDisplaySettings = {
   count: true,
   percent: true,
+  timer: true,
   gap: 1,
   collapseThreshold: 2,
   border: false,
@@ -28,6 +30,7 @@ export function normalizeSettings(value: unknown): TodoDisplaySettings {
   return {
     count: typeof raw.count === "boolean" ? raw.count : DEFAULT_SETTINGS.count,
     percent: typeof raw.percent === "boolean" ? raw.percent : DEFAULT_SETTINGS.percent,
+    timer: typeof raw.timer === "boolean" ? raw.timer : DEFAULT_SETTINGS.timer,
     gap: GAP_VALUES.includes(raw.gap as TodoDisplaySettings["gap"])
       ? (raw.gap as TodoDisplaySettings["gap"])
       : DEFAULT_SETTINGS.gap,
@@ -64,6 +67,7 @@ export function openSettingsMenu(
         options: [
           { title: `Show count: ${onOff(settings.count)}`, value: "count" },
           { title: `Show percentage: ${onOff(settings.percent)}`, value: "percent" },
+          { title: `Show timer: ${onOff(settings.timer)}`, value: "timer" },
           { title: `Header separator: ${gapLabel(settings.gap)}`, value: "gap" },
           { title: `Collapse threshold: ${settings.collapseThreshold}`, value: "threshold" },
           { title: `Border: ${onOff(settings.border)}`, value: "border" },
@@ -78,6 +82,10 @@ export function openSettingsMenu(
       } else if (choice === "percent") {
         await update((draft) => {
           draft.percent = !draft.percent
+        })
+      } else if (choice === "timer") {
+        await update((draft) => {
+          draft.timer = !draft.timer
         })
       } else if (choice === "gap") {
         const picked = await context.ui.dialog.select<TodoDisplaySettings["gap"]>({

@@ -7,6 +7,7 @@ import {
   renderTodos,
   storageKey,
 } from "./todos.js"
+import { applyTodoWrite, findItem, itemTimeLabel, timingSummary } from "./timing.js"
 
 export * from "./todos.js"
 
@@ -72,7 +73,11 @@ const plugin: Plugin.Plugin = {
         options: { codemode: false },
         execute: async (input, context) => {
           const todos = normalizeTodos(input)
-          await ctx.storage.set(storageKey(context.sessionID), { todos, updatedAt: Date.now() })
+          const at = Date.now()
+          const key = storageKey(context.sessionID)
+          const previous = parseTodoRecord(await ctx.storage.get(key))
+          const timing = applyTodoWrite(previous?.timing, todos, at)
+          await ctx.storage.set(key, { todos, updatedAt: at, timing })
           return {
             content: `Todo list updated (${todos.length} ${todos.length === 1 ? "item" : "items"}):\n${renderTodos(todos)}`,
           }
@@ -87,7 +92,11 @@ const plugin: Plugin.Plugin = {
         execute: async (_input, context) => {
           const record = parseTodoRecord(await ctx.storage.get(storageKey(context.sessionID)))
           const todos = record?.todos ?? []
-          return { content: `Current todo list:\n${renderTodos(todos)}` }
+          const now = Date.now()
+          const summary = timingSummary(record?.timing, now)
+          const run = record?.timing?.current ?? record?.timing?.last
+          const list = renderTodos(todos, (todo) => itemTimeLabel(findItem(run, todo.content), now))
+          return { content: `Current todo list${summary ? ` (${summary})` : ""}:\n${list}` }
         },
       })
     })

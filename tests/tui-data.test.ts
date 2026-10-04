@@ -1,13 +1,18 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { headerLabel, latestTodosFromMessages } from "../src/tui-data"
+import { headerLabel, latestTodosFromMessages, todowritesFromMessages } from "../src/tui-data"
 
 function message(parts: unknown[]) {
   return { content: parts }
 }
 
-function tool(name: string, status: string, input: unknown) {
-  return { type: "tool", name, state: { status, input } }
+function tool(name: string, status: string, input: unknown, at?: number) {
+  return {
+    type: "tool",
+    name,
+    state: { status, input },
+    ...(at === undefined ? {} : { time: { created: at } }),
+  }
 }
 
 test("latestTodosFromMessages picks the most recent completed todowrite", () => {
@@ -38,6 +43,56 @@ test("latestTodosFromMessages keeps the last valid list when a later call is inv
     message([tool("todowrite", "completed", { todos: "broken" })]),
   ]
   assert.deepEqual(latestTodosFromMessages(messages), [{ content: "Keep", status: "pending" }])
+})
+
+test("todowritesFromMessages orders writes by timestamp regardless of message order", () => {
+  const older = message([tool("todowrite", "completed", { todos: [{ content: "Old", status: "pending" }] }, 1_000)])
+  const newer = message([tool("todowrite", "completed", { todos: [{ content: "New", status: "pending" }] }, 2_000)])
+
+  assert.deepEqual(
+    todowritesFromMessages([newer, older]).map((write) => write.at),
+    [1_000, 2_000],
+  )
+  assert.equal(latestTodosFromMessages([newer, older])?.[0].content, "New")
+  assert.equal(latestTodosFromMessages([older, newer])?.[0].content, "New")
+})
+
+test("todowritesFromMessages falls back through part and state timestamps", () => {
+  const fromState = message([
+    {
+      type: "tool",
+      name: "todowrite",
+      state: { status: "completed", input: { todos: [{ content: "S", status: "pending" }] }, time: { created: 5 } },
+    },
+  ])
+  const fromCompleted = message([
+    {
+      type: "tool",
+      name: "todowrite",
+      state: { status: "completed", input: { todos: [{ content: "C", status: "pending" }] } },
+      time: { completed: 7 },
+    },
+  ])
+
+  assert.deepEqual(
+    todowritesFromMessages([fromState, fromCompleted]).map((write) => write.at),
+    [5, 7],
+  )
+})
+
+test("todowritesFromMessages keeps untimed writes in order", () => {
+  const writes = todowritesFromMessages([
+    message([tool("todowrite", "completed", { todos: [{ content: "First", status: "pending" }] })]),
+    message([tool("todowrite", "completed", { todos: [{ content: "Second", status: "pending" }] })]),
+  ])
+  assert.deepEqual(
+    writes.map((write) => write.at),
+    [null, null],
+  )
+  assert.deepEqual(
+    writes.map((write) => write.todos[0].content),
+    ["First", "Second"],
+  )
 })
 
 const sample = [
