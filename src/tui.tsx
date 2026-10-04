@@ -2,8 +2,8 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { Todo, TodoStatus } from "./todos.js"
-import { headerLabel, todowritesFromMessages } from "./tui-data.js"
-import { buildTiming, findItem, formatDuration, hasCompletedItem, itemTimeLabel, runElapsed } from "./timing.js"
+import { headerLabel, headerTimeLabel, todowritesFromMessages } from "./tui-data.js"
+import { buildTiming, findItem, hasCompletedItem, itemTimeLabel } from "./timing.js"
 import {
   normalizeSettings,
   openSettingsMenu,
@@ -85,14 +85,8 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
   })
   const collapsible = () => todos().length > display().collapseThreshold
 
-  const header = createMemo(() => {
-    const base = headerLabel(todos(), display())
-    if (!display().timer) return base
-    const state = timing()
-    if (state.current) return `${base} · ${formatDuration(runElapsed(state.current, now()))}`
-    if (finished() && state.last) return `${base} · done in ${formatDuration(runElapsed(state.last, now()))}`
-    return base
-  })
+  const header = createMemo(() => headerLabel(todos(), display()))
+  const headerTime = createMemo(() => headerTimeLabel(timing(), display().timer, now()))
 
   return (
     <Show when={show()}>
@@ -104,13 +98,18 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
         paddingLeft={display().border ? 1 : 0}
         paddingRight={display().border ? 1 : 0}
       >
-        <box flexDirection="row" gap={1} onMouseDown={() => collapsible() && setOpen((value) => !value)}>
+        <box width="100%" flexDirection="row" gap={1} onMouseDown={() => collapsible() && setOpen((value) => !value)}>
           <Show when={collapsible()}>
-            <text fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
+            <text flexShrink={0} fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
           </Show>
-          <text fg={props.context.theme.text.base}>
+          <text flexGrow={1} minWidth={0} fg={props.context.theme.text.base}>
             <b>{header()}</b>
           </text>
+          <Show when={headerTime()}>
+            <text flexShrink={0} fg={props.context.theme.text.base}>
+              <b>{headerTime()}</b>
+            </text>
+          </Show>
         </box>
         <Show when={display().gap > 0}>
           <box height={1} border={["top"]} borderColor={props.context.theme.text.muted} />

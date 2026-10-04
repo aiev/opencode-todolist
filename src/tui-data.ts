@@ -1,5 +1,6 @@
 import { normalizeTodos, type Todo } from "./todos.js"
 import type { TodoDisplaySettings } from "./tui-settings.js"
+import { formatDuration, hasCompletedItem, runElapsed, type TimingState } from "./timing.js"
 
 type PartTime = {
   created?: unknown
@@ -108,4 +109,15 @@ export function headerLabel(
   if (display.count) parts.push(`[${done}/${total}]`)
   if (display.percent) parts.push(`${percent}%`)
   return parts.length === 0 ? "Todo" : `Todo ${parts.join(" · ")}`
+}
+
+/** Standalone timer label for the right side of the heading, without a separator. */
+export function headerTimeLabel(state: TimingState, timer: boolean, now: number): string | undefined {
+  if (!timer) return undefined
+  if (state.current) return formatDuration(runElapsed(state.current, now))
+  const last = state.last
+  if (last && !last.abandoned && hasCompletedItem(last)) {
+    return `done in ${formatDuration(runElapsed(last, now))}`
+  }
+  return undefined
 }

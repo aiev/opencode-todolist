@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { headerLabel, latestTodosFromMessages, todowritesFromMessages } from "../src/tui-data"
+import { headerLabel, headerTimeLabel, latestTodosFromMessages, todowritesFromMessages } from "../src/tui-data"
+import { buildTiming } from "../src/timing"
 
 function message(parts: unknown[]) {
   return { content: parts }
@@ -117,4 +118,34 @@ test("headerLabel rounds and handles an empty list", () => {
   ]
   assert.equal(headerLabel(thirds, { count: true, percent: true }), "Todo [1/3] · 33%")
   assert.equal(headerLabel([], { count: true, percent: true }), "Todo [0/0] · 0%")
+})
+
+test("headerTimeLabel keeps the live timer separate from the heading without a separator", () => {
+  const state = buildTiming([{ at: 1_000, todos: sample }])
+  assert.equal(headerTimeLabel(state, true, 253_000), "4m12s")
+  assert.equal(headerLabel(sample, { count: true, percent: true }), "Todo [1/4] · 25%")
+  assert.equal(headerTimeLabel(state, false, 253_000), undefined)
+})
+
+test("headerTimeLabel keeps the finished total fixed and without a separator", () => {
+  const state = buildTiming([
+    { at: 1_000, todos: [{ content: "A", status: "in_progress" }] },
+    { at: 253_000, todos: [{ content: "A", status: "completed" }] },
+  ])
+  assert.equal(headerTimeLabel(state, true, 999_999), "done in 4m12s")
+  assert.equal(headerTimeLabel(state, false, 999_999), undefined)
+})
+
+test("headerTimeLabel omits missing, abandoned and cancelled-only timing", () => {
+  assert.equal(headerTimeLabel({}, true, 999_999), undefined)
+  const abandoned = buildTiming([
+    { at: 1_000, todos: [{ content: "A", status: "in_progress" }] },
+    { at: 253_000, todos: [] },
+  ])
+  assert.equal(headerTimeLabel(abandoned, true, 999_999), undefined)
+  const cancelled = buildTiming([
+    { at: 1_000, todos: [{ content: "A", status: "in_progress" }] },
+    { at: 253_000, todos: [{ content: "A", status: "cancelled" }] },
+  ])
+  assert.equal(headerTimeLabel(cancelled, true, 999_999), undefined)
 })
