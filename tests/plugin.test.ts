@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import test from "node:test"
+import test, { mock } from "node:test"
 import type { Plugin } from "@opencode/plugin"
 import plugin from "../src/index"
 
@@ -111,4 +111,40 @@ test("context hook stays quiet when nothing is open", async () => {
   const unknown = { sessionID: "ses_unknown", system: [] as Array<{ type: string; text: string }> }
   await fake.hooks.get("context")!(unknown)
   assert.equal(unknown.system.length, 0)
+})
+
+test("todoread reports a running timer for the current run", async () => {
+  mock.timers.enable({ apis: ["Date"], now: 1_000 })
+  try {
+    const fake = fakeContext()
+    await plugin.setup(fake.context)
+    const write = fake.tools.get("todowrite")!
+    await write.execute({ todos: [{ content: "Work", status: "in_progress" }] }, { sessionID: "ses_1" })
+
+    mock.timers.tick(252_000)
+    const output = await fake.tools.get("todoread")!.execute({}, { sessionID: "ses_1" })
+    assert.match(output.content ?? "", /running for 4m12s/)
+    assert.match(output.content ?? "", /\[•\] Work — 4m12s/)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("todoread reports the total when the run finishes", async () => {
+  mock.timers.enable({ apis: ["Date"], now: 1_000 })
+  try {
+    const fake = fakeContext()
+    await plugin.setup(fake.context)
+    const write = fake.tools.get("todowrite")!
+    await write.execute({ todos: [{ content: "A", status: "pending" }] }, { sessionID: "ses_1" })
+
+    mock.timers.tick(120_000)
+    await write.execute({ todos: [{ content: "A", status: "completed" }] }, { sessionID: "ses_1" })
+
+    const output = await fake.tools.get("todoread")!.execute({}, { sessionID: "ses_1" })
+    assert.match(output.content ?? "", /finished in 2m00s/)
+    assert.match(output.content ?? "", /\[x\] A/)
+  } finally {
+    mock.timers.reset()
+  }
 })

@@ -1,8 +1,9 @@
 /** @jsxImportSource @opentui/solid */
-import { createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { Todo, TodoStatus } from "./todos.js"
-import { headerLabel, latestTodosFromMessages } from "./tui-data.js"
+import { headerLabel, todowritesFromMessages } from "./tui-data.js"
+import { buildTiming, findItem, formatDuration, hasCompletedItem, itemTimeLabel, runElapsed } from "./timing.js"
 import {
   normalizeSettings,
   openSettingsMenu,
@@ -17,7 +18,7 @@ function mark(status: TodoStatus): string {
   return " "
 }
 
-function TodoRow(props: { context: Plugin.Context; todo: Todo }) {
+function TodoRow(props: { context: Plugin.Context; todo: Todo; time?: string }) {
   const color = () =>
     props.todo.status === "in_progress"
       ? props.context.theme.text.feedback.warning.base
@@ -31,6 +32,11 @@ function TodoRow(props: { context: Plugin.Context; todo: Todo }) {
       <text flexGrow={1} wrapMode="word" style={{ fg: color() }}>
         {props.todo.content}
       </text>
+      <Show when={props.time}>
+        <text flexShrink={0} style={{ fg: props.context.theme.text.muted }}>
+          {` · ${props.time}`}
+        </text>
+      </Show>
     </box>
   )
 }
@@ -38,17 +44,55 @@ function TodoRow(props: { context: Plugin.Context; todo: Todo }) {
 /** V1-parity todo list at the end of the sidebar, with configurable heading. */
 function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings: TodoDisplaySettings }) {
   const [open, setOpen] = createSignal(true)
+  const [now, setNow] = createSignal(Date.now())
   const display = () => normalizeSettings(props.settings)
 
-  const todos = () => {
+  const writes = createMemo(() => {
     try {
-      return latestTodosFromMessages(props.context.data.session.message.list(props.sessionID)) ?? []
+      return todowritesFromMessages(props.context.data.session.message.list(props.sessionID))
     } catch {
       return []
     }
-  }
-  const show = () => todos().length > 0 && todos().some((todo) => todo.status !== "completed")
+  })
+  const timing = createMemo(() => buildTiming(writes()))
+  const todos = createMemo(() => {
+    const list = writes()
+    return list.length === 0 ? [] : list[list.length - 1].todos
+  })
+  const run = createMemo(() => timing().current ?? timing().last)
+  const finished = createMemo(() => {
+    const state = timing()
+    return (
+      state.current === undefined &&
+      state.last !== undefined &&
+      state.last.abandoned !== true &&
+      hasCompletedItem(state.last)
+    )
+  })
+
+  // Only tick while a run is open; the closed total is rendered from its end time.
+  createEffect(() => {
+    if (!display().timer || timing().current === undefined) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(id))
+  })
+
+  const show = createMemo(() => {
+    const list = todos()
+    if (list.length === 0) return false
+    if (list.some((todo) => todo.status !== "completed")) return true
+    return display().timer && finished()
+  })
   const collapsible = () => todos().length > display().collapseThreshold
+
+  const header = createMemo(() => {
+    const base = headerLabel(todos(), display())
+    if (!display().timer) return base
+    const state = timing()
+    if (state.current) return `${base} · ${formatDuration(runElapsed(state.current, now()))}`
+    if (finished() && state.last) return `${base} · done in ${formatDuration(runElapsed(state.last, now()))}`
+    return base
+  })
 
   return (
     <Show when={show()}>
@@ -65,7 +109,7 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
             <text fg={props.context.theme.text.base}>{open() ? "▼" : "▶"}</text>
           </Show>
           <text fg={props.context.theme.text.base}>
-            <b>{headerLabel(todos(), display())}</b>
+            <b>{header()}</b>
           </text>
         </box>
         <Show when={display().gap > 0}>
@@ -75,7 +119,12 @@ function TodoStrip(props: { context: Plugin.Context; sessionID: string; settings
           <box height={display().gap - 1} />
         </Show>
         <Show when={!collapsible() || open()}>
-          <For each={todos()}>{(todo) => <TodoRow context={props.context} todo={todo} />}</For>
+          <For each={todos()}>
+            {(todo) => {
+              const time = () => (display().timer ? itemTimeLabel(findItem(run(), todo.content), now()) : undefined)
+              return <TodoRow context={props.context} todo={todo} time={time()} />
+            }}
+          </For>
         </Show>
       </box>
     </Show>

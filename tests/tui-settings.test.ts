@@ -4,8 +4,8 @@ import { DEFAULT_SETTINGS, normalizeSettings } from "../src/tui-settings"
 
 test("normalizeSettings keeps valid stored values", () => {
   assert.deepEqual(
-    normalizeSettings({ count: false, percent: false, gap: 2, collapseThreshold: 5, border: true }),
-    { count: false, percent: false, gap: 2, collapseThreshold: 5, border: true },
+    normalizeSettings({ count: false, percent: false, timer: false, gap: 2, collapseThreshold: 5, border: true }),
+    { count: false, percent: false, timer: false, gap: 2, collapseThreshold: 5, border: true },
   )
 })
 
