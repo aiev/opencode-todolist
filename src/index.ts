@@ -105,14 +105,27 @@ const plugin: Plugin.Plugin = {
       const record = parseTodoRecord(await ctx.storage.get(storageKey(event.sessionID)))
       const todos = record?.todos ?? []
       if (!todos.some((todo) => todo.status === "pending" || todo.status === "in_progress")) return
-      event.system.push({
-        type: "text",
-        text: [
-          "Current todo list for this session:",
-          renderTodos(todos),
-          "",
-          "Keep it current with the todowrite tool as work progresses.",
-        ].join("\n"),
+
+      // Append the list to the END of the request, not to `system`. The system
+      // prompt is the head of the token stream, so the list changing there
+      // invalidates the whole prefix / KV cache on every todowrite (and the
+      // block vanishing when the last task closes is the largest such change).
+      // A trailing message only perturbs the tail, so the conversation prefix
+      // stays cacheable. `user` is used because some chat templates reject a
+      // system message anywhere but the beginning.
+      event.messages.push({
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              "Current todo list for this session (automatic context update, not a user request):",
+              renderTodos(todos),
+              "",
+              "Continue the current task and keep this list current with the todowrite tool as work progresses.",
+            ].join("\n"),
+          },
+        ],
       })
     })
 
