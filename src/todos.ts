@@ -20,6 +20,10 @@ export const TODO_PRIORITIES: ReadonlyArray<TodoPriority> = ["high", "medium", "
 
 export const STORAGE_PREFIX = "todos/"
 
+/** Hard caps so a runaway or adversarial list can't blow up the request. */
+export const MAX_TODOS = 100
+export const MAX_TODO_CONTENT_LENGTH = 500
+
 export const STATUS_MARK: Record<TodoStatus, string> = {
   pending: "[ ]",
   in_progress: "[•]",
@@ -43,6 +47,9 @@ export function normalizeTodos(input: unknown): Array<Todo> {
   if (!Array.isArray(todos)) {
     throw new Error("`todos` must be an array")
   }
+  if (todos.length > MAX_TODOS) {
+    throw new Error(`at most ${MAX_TODOS} todos per list (got ${todos.length})`)
+  }
   return todos.map((entry, index) => {
     if (entry === null || typeof entry !== "object") {
       throw new Error(`todo #${index + 1} must be an object`)
@@ -51,6 +58,9 @@ export function normalizeTodos(input: unknown): Array<Todo> {
     const content = typeof item.content === "string" ? item.content.trim() : ""
     if (!content) {
       throw new Error(`todo #${index + 1} requires a non-empty \`content\` string`)
+    }
+    if (content.length > MAX_TODO_CONTENT_LENGTH) {
+      throw new Error(`todo #${index + 1} \`content\` is over ${MAX_TODO_CONTENT_LENGTH} characters`)
     }
     if (!TODO_STATUSES.includes(item.status as TodoStatus)) {
       throw new Error(`todo #${index + 1} has invalid \`status\` (expected one of: ${TODO_STATUSES.join(", ")})`)

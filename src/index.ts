@@ -10,6 +10,8 @@ import {
 } from "./todos.js"
 import { applyTodoWrite, findItem, itemTimeLabel, timingSummary } from "./timing.js"
 import { TODO_SETTINGS_KEY, TodolistRpc, normalizeTodoSettings } from "./rpc.js"
+import { registerTodoCommand } from "./todo-command.js"
+import { withAutoTodos } from "./auto-todos.js"
 
 export * from "./todos.js"
 
@@ -83,7 +85,7 @@ const plugin: Plugin.Plugin = {
         input: TODOS_INPUT_SCHEMA,
         options: { codemode: false },
         execute: async (input, context) => {
-          const todos = normalizeTodos(input)
+          const todos = await withAutoTodos(ctx, context.sessionID, normalizeTodos(input))
           const at = Date.now()
           const key = storageKey(context.sessionID)
           const previous = parseTodoRecord(await ctx.storage.get(key))
@@ -111,6 +113,8 @@ const plugin: Plugin.Plugin = {
         },
       })
     })
+
+    const todoCommand = await registerTodoCommand(ctx)
 
     let settings = normalizeTodoSettings(await ctx.storage.get(TODO_SETTINGS_KEY))
 
@@ -203,6 +207,7 @@ const plugin: Plugin.Plugin = {
       await compaction.dispose()
       await rpc.dispose()
       await tools.dispose()
+      await todoCommand.dispose()
     }
   },
 }
