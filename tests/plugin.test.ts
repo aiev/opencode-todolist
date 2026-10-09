@@ -8,7 +8,15 @@ type ToolDef = {
   execute: (input: unknown, context: { sessionID: string }) => Promise<{ content?: string }>
 }
 
-type ContextHook = (event: { sessionID: string; system: Array<{ type: string; text: string }> }) => Promise<void> | void
+type SystemPart = { type: string; text: string }
+type ContextMessage = { role: string; content: Array<{ type: string; text: string }> }
+type ContextEvent = {
+  sessionID: string
+  system: Array<SystemPart>
+  messages: Array<ContextMessage>
+}
+
+type ContextHook = (event: ContextEvent) => Promise<void> | void
 
 function fakeEvents() {
   const queue: Array<unknown> = []
@@ -121,7 +129,7 @@ test("todos are stored and read per session", async () => {
   assert.match(other.content ?? "", /empty/)
 })
 
-test("context hook injects the open todo list into the system prompt", async () => {
+test("context hook appends the open todo list at the tail", async () => {
   const fake = fakeContext()
   await plugin.setup(fake.context)
   await fake.tools.get("todowrite")!.execute(
@@ -129,12 +137,39 @@ test("context hook injects the open todo list into the system prompt", async () 
     { sessionID: "ses_1" },
   )
 
-  const event = { sessionID: "ses_1", system: [] as Array<{ type: string; text: string }> }
+  const event: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
   await fake.hooks.get("context")!(event)
 
-  assert.equal(event.system.length, 1)
-  assert.match(event.system[0].text, /Open task/)
-  assert.match(event.system[0].text, /todowrite/)
+  // Nothing is added to the head; the list is the last message instead.
+  assert.equal(event.system.length, 0)
+  assert.equal(event.messages.length, 1)
+  const injected = event.messages[0]
+  assert.equal(injected.role, "user")
+  assert.match(injected.content[0].text, /Open task/)
+  assert.match(injected.content[0].text, /todowrite/)
+})
+
+test("a status change never touches the system prompt", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const write = fake.tools.get("todowrite")!
+
+  await write.execute({ todos: [{ content: "A", status: "in_progress" }] }, { sessionID: "ses_1" })
+  const before: ContextEvent = { sessionID: "ses_1", system: [{ type: "text", text: "base" }], messages: [] }
+  await fake.hooks.get("context")!(before)
+
+  await write.execute(
+    { todos: [{ content: "A", status: "completed" }, { content: "B", status: "pending" }] },
+    { sessionID: "ses_1" },
+  )
+  const after: ContextEvent = { sessionID: "ses_1", system: [{ type: "text", text: "base" }], messages: [] }
+  await fake.hooks.get("context")!(after)
+
+  // Head byte-identical (the prefix stays cacheable); only the tail changed.
+  assert.deepEqual(after.system, before.system)
+  assert.equal(before.messages.length, 1)
+  assert.equal(after.messages.length, 1)
+  assert.notEqual(after.messages[0].content[0].text, before.messages[0].content[0].text)
 })
 
 test("context hook stays quiet when nothing is open", async () => {
@@ -145,13 +180,15 @@ test("context hook stays quiet when nothing is open", async () => {
     { sessionID: "ses_1" },
   )
 
-  const finished = { sessionID: "ses_1", system: [] as Array<{ type: string; text: string }> }
+  const finished: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
   await fake.hooks.get("context")!(finished)
   assert.equal(finished.system.length, 0)
+  assert.equal(finished.messages.length, 0)
 
-  const unknown = { sessionID: "ses_unknown", system: [] as Array<{ type: string; text: string }> }
+  const unknown: ContextEvent = { sessionID: "ses_unknown", system: [], messages: [] }
   await fake.hooks.get("context")!(unknown)
   assert.equal(unknown.system.length, 0)
+  assert.equal(unknown.messages.length, 0)
 })
 
 test("todoread reports a running timer for the current run", async () => {
