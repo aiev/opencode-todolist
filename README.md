@@ -70,12 +70,15 @@ Run `/todo-settings` (or pick "Todolist: Settings" from the command palette) to 
 
 | Setting | Default | Values |
 | --- | --- | --- |
+| Update reminders | on | on/off |
 | Show count | on | on/off |
 | Show percentage | on | on/off |
 | Show timer | on | on/off |
 | Header separator | line | none / line / line + blank |
 | Collapse threshold | 2 | 2/3/5 |
 | Border | off | on/off |
+
+**Update reminders** adds a constant line to the system prompt once a session has a todo list, asking the model to mark items completed in the same step instead of batching. The line never changes within a session, so it does not affect prompt caching; sessions that never use a list are untouched.
 
 ### Timer
 
