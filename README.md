@@ -66,7 +66,7 @@ The terminal client shows a live todo strip at the end of the session sidebar, s
 
 In-progress tasks use the warning color and everything else is muted, matching OpenCode V1. The heading shows completed/total and the percentage; either part can be turned off. Long items wrap and lists longer than two items collapse with a click. Once everything is completed the strip hides, unless the timer is on — then it stays to show the total.
 
-Run `/todo-sections` (or pick "Todolist: Settings" from the command palette) to configure:
+Run `/todo-settings` (or pick "Todolist: Settings" from the command palette) to configure:
 
 | Setting | Default | Values |
 | --- | --- | --- |
