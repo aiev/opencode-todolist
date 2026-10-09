@@ -65,6 +65,7 @@ function fakeContext() {
   const hooks = new Map<string, Hook>()
   const storage = new Map<string, unknown>()
   const events = fakeEvents()
+  const rpc = new Map<string, Record<string, (input: unknown) => Promise<unknown>>>()
 
   const editor = {
     add: (tool: ToolDef) => tools.set(tool.name, tool),
@@ -80,6 +81,15 @@ function fakeContext() {
       transform: async (callback: (value: unknown) => void) => {
         callback(editor)
         return { dispose: async () => {} }
+      },
+    },
+    rpc: {
+      register: async (
+        definition: { id: string },
+        handlers: Record<string, (input: unknown) => Promise<unknown>>,
+      ) => {
+        rpc.set(definition.id, handlers)
+        return { dispose: async () => {}, events: { emit: async () => {} } }
       },
     },
     session: {
@@ -103,7 +113,7 @@ function fakeContext() {
     },
   } as unknown as Plugin.Context
 
-  return { context, tools, hooks, storage, events }
+  return { context, tools, hooks, storage, events, rpc }
 }
 
 test("setup registers todowrite and todoread", async () => {
@@ -145,8 +155,10 @@ test("context hook appends the open todo list at the tail", async () => {
   const event: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
   await fake.hooks.get("context")!(event)
 
-  // Nothing is added to the head; the list is the last message instead.
-  assert.equal(event.system.length, 0)
+  // The volatile list is the last message; the head only carries the constant
+  // update-reminder line.
+  assert.equal(event.system.length, 1)
+  assert.match(event.system[0].text, /in the same step/)
   assert.equal(event.messages.length, 1)
   const injected = event.messages[0]
   assert.equal(injected.role, "user")
@@ -187,7 +199,7 @@ test("context hook stays quiet when nothing is open", async () => {
 
   const finished: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
   await fake.hooks.get("context")!(finished)
-  assert.equal(finished.system.length, 0)
+  assert.equal(finished.system.length, 1) // constant reminder only; no tail notice
   assert.equal(finished.messages.length, 0)
 
   const unknown: ContextEvent = { sessionID: "ses_unknown", system: [], messages: [] }
@@ -371,6 +383,65 @@ test("closing and reopening the list resets the guard", async () => {
   const reopened = continuation()
   await hook(reopened)
   assert.equal(reopened.messages.length, 4)
+})
+
+test("rpc settings default to update reminders on and persist changes", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const handlers = fake.rpc.get("aiev.todolist")!
+
+  assert.deepEqual(await handlers.getSettings({}), { updateReminders: true })
+  assert.deepEqual(await handlers.setSettings({ updateReminders: false }), { updateReminders: false })
+  assert.deepEqual(fake.storage.get("settings"), { updateReminders: false })
+  assert.deepEqual(await handlers.getSettings({}), { updateReminders: false })
+})
+
+test("update reminders add a constant system line once a session has a list", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  const write = fake.tools.get("todowrite")!
+
+  const before: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
+  await hook(before)
+  assert.equal(before.system.length, 0)
+
+  await write.execute({ todos: [{ content: "A", status: "in_progress" }] }, { sessionID: "ses_1" })
+  const open: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
+  await hook(open)
+  assert.equal(open.system.length, 1)
+  assert.match(open.system[0].text, /in the same step/)
+
+  // Closing the last task keeps the line byte-identical, so the head never
+  // changes again for the session.
+  await write.execute({ todos: [{ content: "A", status: "completed" }] }, { sessionID: "ses_1" })
+  const closed: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
+  await hook(closed)
+  assert.deepEqual(closed.system, open.system)
+  assert.equal(closed.messages.length, 0)
+})
+
+test("update reminders can be turned off through rpc", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  await fake.rpc.get("aiev.todolist")!.setSettings({ updateReminders: false })
+  await fake.tools.get("todowrite")!.execute({ todos: [{ content: "A", status: "pending" }] }, { sessionID: "ses_1" })
+
+  const event: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
+  await fake.hooks.get("context")!(event)
+  assert.equal(event.system.length, 0)
+  assert.equal(event.messages.length, 1)
+})
+
+test("a stored reminder-off setting survives setup", async () => {
+  const fake = fakeContext()
+  fake.storage.set("settings", { updateReminders: false })
+  await plugin.setup(fake.context)
+  await fake.tools.get("todowrite")!.execute({ todos: [{ content: "A", status: "pending" }] }, { sessionID: "ses_1" })
+
+  const event: ContextEvent = { sessionID: "ses_1", system: [], messages: [] }
+  await fake.hooks.get("context")!(event)
+  assert.equal(event.system.length, 0)
 })
 
 test("todoread reports a running timer for the current run", async () => {

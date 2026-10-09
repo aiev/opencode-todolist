@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/plugin/tui"
+import { TodolistRpc } from "./rpc.js"
 
 export type TodoDisplaySettings = {
   count: boolean
@@ -61,10 +62,22 @@ export function openSettingsMenu(
   update: (mutation: (draft: TodoDisplaySettings) => void) => Promise<void>,
 ): void {
   void (async () => {
+    const rpc = context.client.rpc(TodolistRpc)
+    const readReminders = async (): Promise<boolean> => {
+      try {
+        const value = (await rpc.getSettings({})) as { updateReminders?: unknown }
+        return typeof value.updateReminders === "boolean" ? value.updateReminders : true
+      } catch {
+        // Server plugin unavailable; fall back to the default.
+        return true
+      }
+    }
     while (true) {
+      const reminders = await readReminders()
       const choice = await context.ui.dialog.select<string>({
         title: "Todolist settings",
         options: [
+          { title: `Update reminders: ${onOff(reminders)}`, value: "reminder" },
           { title: `Show count: ${onOff(settings.count)}`, value: "count" },
           { title: `Show percentage: ${onOff(settings.percent)}`, value: "percent" },
           { title: `Show timer: ${onOff(settings.timer)}`, value: "timer" },
@@ -75,7 +88,13 @@ export function openSettingsMenu(
       })
       if (choice === undefined) return
 
-      if (choice === "count") {
+      if (choice === "reminder") {
+        try {
+          await rpc.setSettings({ updateReminders: !reminders })
+        } catch {
+          // Server plugin unavailable; leave the stored setting unchanged.
+        }
+      } else if (choice === "count") {
         await update((draft) => {
           draft.count = !draft.count
         })

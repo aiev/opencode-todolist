@@ -142,7 +142,7 @@ function SettingsRoot(props: {
       {
         id: "aiev.todolist.settings",
         title: "Todolist: Settings",
-        description: "Configure the sidebar todo list",
+        description: "Configure the todo list reminders and sidebar",
         slash: { name: "todo-settings" },
         palette: true,
         run: () => openSettingsMenu(props.context, props.settings, props.update),

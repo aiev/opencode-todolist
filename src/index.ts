@@ -9,6 +9,7 @@ import {
   storageKey,
 } from "./todos.js"
 import { applyTodoWrite, findItem, itemTimeLabel, timingSummary } from "./timing.js"
+import { TODO_SETTINGS_KEY, TodolistRpc, normalizeTodoSettings } from "./rpc.js"
 
 export * from "./todos.js"
 
@@ -62,6 +63,15 @@ const TODOWRITE_DESCRIPTION = [
 const TODOREAD_DESCRIPTION =
   "Read the current session todo list. Use it to recover the list after context compaction or to check progress before starting the next task."
 
+/**
+ * Injected into `system` while the session has a todo list so the model keeps
+ * statuses current as it works instead of batching updates. The text is
+ * byte-identical on every request: changing the head of the token stream would
+ * invalidate the whole prefix cache.
+ */
+const UPDATE_REMINDER_TEXT =
+  "Keep the session todo list current in the same step: mark finished items completed immediately, never in batch, and set the next item in_progress before starting it."
+
 const plugin: Plugin.Plugin = {
   id: "aiev.todolist",
 
@@ -102,6 +112,17 @@ const plugin: Plugin.Plugin = {
       })
     })
 
+    let settings = normalizeTodoSettings(await ctx.storage.get(TODO_SETTINGS_KEY))
+
+    const rpc = await ctx.rpc.register(TodolistRpc, {
+      getSettings: async () => settings,
+      setSettings: async (input) => {
+        settings = normalizeTodoSettings(input)
+        await ctx.storage.set(TODO_SETTINGS_KEY, settings)
+        return settings
+      },
+    })
+
     // Rendered notices already sent per session. On tool-driven continuations
     // an unchanged list is skipped so the previous step's tokens stay
     // cacheable. A fresh user turn always gets the notice back: injected
@@ -111,6 +132,13 @@ const plugin: Plugin.Plugin = {
 
     const context = await ctx.session.hook("context", async (event) => {
       const record = parseTodoRecord(await ctx.storage.get(storageKey(event.sessionID)))
+
+      // Sticky per session: present from the first list onward, including after
+      // the last task closes, so the head never changes again for the session.
+      if (settings.updateReminders && record) {
+        event.system.push({ type: "text", text: UPDATE_REMINDER_TEXT })
+      }
+
       const todos = record?.todos ?? []
       if (!hasOpenTodos(todos)) {
         injected.delete(event.sessionID)
@@ -173,6 +201,7 @@ const plugin: Plugin.Plugin = {
       await cleanup
       await context.dispose()
       await compaction.dispose()
+      await rpc.dispose()
       await tools.dispose()
     }
   },
