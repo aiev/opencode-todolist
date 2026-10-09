@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import {
   TODO_PRIORITIES,
   TODO_STATUSES,
+  hasOpenTodos,
   normalizeTodos,
   parseTodoRecord,
   renderTodos,
@@ -101,10 +102,31 @@ const plugin: Plugin.Plugin = {
       })
     })
 
+    // Rendered notices already sent per session. On tool-driven continuations
+    // an unchanged list is skipped so the previous step's tokens stay
+    // cacheable. A fresh user turn always gets the notice back: injected
+    // messages are not persisted, so the model only ever sees the notice in
+    // the request that carries it.
+    const injected = new Map<string, string>()
+
     const context = await ctx.session.hook("context", async (event) => {
       const record = parseTodoRecord(await ctx.storage.get(storageKey(event.sessionID)))
       const todos = record?.todos ?? []
-      if (!todos.some((todo) => todo.status === "pending" || todo.status === "in_progress")) return
+      if (!hasOpenTodos(todos)) {
+        injected.delete(event.sessionID)
+        return
+      }
+
+      const text = [
+        "Current todo list for this session (automatic context update, not a user request):",
+        renderTodos(todos),
+        "",
+        "Continue the current task and keep this list current with the todowrite tool as work progresses.",
+      ].join("\n")
+
+      const last = event.messages.at(-1)
+      const freshTurn = last === undefined || last.role === "user"
+      if (!freshTurn && injected.get(event.sessionID) === text) return
 
       // Append the list to the END of the request, not to `system`. The system
       // prompt is the head of the token stream, so the list changing there
@@ -115,18 +137,15 @@ const plugin: Plugin.Plugin = {
       // system message anywhere but the beginning.
       event.messages.push({
         role: "user",
-        content: [
-          {
-            type: "text",
-            text: [
-              "Current todo list for this session (automatic context update, not a user request):",
-              renderTodos(todos),
-              "",
-              "Continue the current task and keep this list current with the todowrite tool as work progresses.",
-            ].join("\n"),
-          },
-        ],
+        content: [{ type: "text", text }],
       })
+      injected.set(event.sessionID, text)
+    })
+
+    // After a checkpoint the notice is gone from the model's context, so the
+    // next request injects it again even when the list did not change.
+    const compaction = await ctx.session.hook("compaction", (event) => {
+      injected.delete(event.sessionID)
     })
 
     // Drop the stored list when its session is deleted. Records are tiny, so a
@@ -137,7 +156,10 @@ const plugin: Plugin.Plugin = {
         for await (const event of ctx.event.subscribe({ signal: deleted.signal })) {
           if (event.type !== "session.deleted") continue
           const sessionID = event.data?.sessionID ?? event.durable?.aggregateID
-          if (sessionID) await ctx.storage.remove(storageKey(sessionID))
+          if (sessionID) {
+            injected.delete(sessionID)
+            await ctx.storage.remove(storageKey(sessionID))
+          }
         }
       } catch (error) {
         if (!deleted.signal.aborted) {
@@ -150,6 +172,7 @@ const plugin: Plugin.Plugin = {
       deleted.abort()
       await cleanup
       await context.dispose()
+      await compaction.dispose()
       await tools.dispose()
     }
   },

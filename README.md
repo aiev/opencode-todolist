@@ -7,7 +7,7 @@ OpenCode V2 removed the built-in todo tools. This plugin brings them back as a s
 - **`todowrite`** — create or replace the todo list for the current session.
 - **`todoread`** — read the current list back.
 
-Lists are stored per session and a compact summary is injected into the session context on every model request while tasks are still open, so the model keeps track of them across long conversations and context compaction.
+Lists are stored per session and a compact summary is injected into the session context while tasks are still open — at every user turn and whenever the list changes mid-run — so the model keeps track of them across long conversations and context compaction.
 
 ## Screenshot
 

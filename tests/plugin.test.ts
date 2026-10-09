@@ -15,8 +15,13 @@ type ContextEvent = {
   system: Array<SystemPart>
   messages: Array<ContextMessage>
 }
+type HookEvent = {
+  sessionID: string
+  system?: Array<SystemPart>
+  messages?: Array<ContextMessage>
+}
 
-type ContextHook = (event: ContextEvent) => Promise<void> | void
+type Hook = (event: HookEvent) => Promise<void> | void
 
 function fakeEvents() {
   const queue: Array<unknown> = []
@@ -57,7 +62,7 @@ function fakeEvents() {
 
 function fakeContext() {
   const tools = new Map<string, ToolDef>()
-  const hooks = new Map<string, ContextHook>()
+  const hooks = new Map<string, Hook>()
   const storage = new Map<string, unknown>()
   const events = fakeEvents()
 
@@ -78,7 +83,7 @@ function fakeContext() {
       },
     },
     session: {
-      hook: async (name: string, callback: ContextHook) => {
+      hook: async (name: string, callback: Hook) => {
         hooks.set(name, callback)
         return { dispose: async () => {} }
       },
@@ -189,6 +194,183 @@ test("context hook stays quiet when nothing is open", async () => {
   await fake.hooks.get("context")!(unknown)
   assert.equal(unknown.system.length, 0)
   assert.equal(unknown.messages.length, 0)
+})
+
+test("context hook skips an unchanged list on tool continuations", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  await fake.tools.get("todowrite")!.execute(
+    { todos: [{ content: "Open task", status: "in_progress" }] },
+    { sessionID: "ses_1" },
+  )
+
+  const fresh: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  }
+  await hook(fresh)
+  assert.equal(fresh.messages.length, 2)
+
+  // A tool-driven continuation with the same list appends nothing, so the
+  // previous step's tokens stay cacheable.
+  const continuation: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+      { role: "tool", content: [] },
+    ],
+  }
+  await hook(continuation)
+  assert.equal(continuation.messages.length, 3)
+})
+
+test("a changed list is re-injected on a tool continuation", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  const write = fake.tools.get("todowrite")!
+
+  await write.execute({ todos: [{ content: "A", status: "in_progress" }] }, { sessionID: "ses_1" })
+  const fresh: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  }
+  await hook(fresh)
+
+  await write.execute(
+    { todos: [{ content: "A", status: "completed" }, { content: "B", status: "pending" }] },
+    { sessionID: "ses_1" },
+  )
+  const continuation: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+      { role: "tool", content: [] },
+    ],
+  }
+  await hook(continuation)
+  assert.equal(continuation.messages.length, 4)
+  assert.match(continuation.messages[3].content[0].text, /2\. \[ \] B/)
+})
+
+test("a fresh user turn always gets the list back", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  await fake.tools.get("todowrite")!.execute(
+    { todos: [{ content: "Open task", status: "in_progress" }] },
+    { sessionID: "ses_1" },
+  )
+
+  const first: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  }
+  await hook(first)
+  assert.equal(first.messages.length, 2)
+
+  // Injected notices are not persisted, so a new user turn re-injects even
+  // when the list is unchanged.
+  const second: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "done?" }] },
+      { role: "user", content: [{ type: "text", text: "continue" }] },
+    ],
+  }
+  await hook(second)
+  assert.equal(second.messages.length, 4)
+})
+
+test("compaction makes the next request inject the list again", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  const compact = fake.hooks.get("compaction")!
+  await fake.tools.get("todowrite")!.execute(
+    { todos: [{ content: "Open task", status: "in_progress" }] },
+    { sessionID: "ses_1" },
+  )
+
+  const fresh: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  }
+  await hook(fresh)
+
+  const continuation: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+      { role: "tool", content: [] },
+    ],
+  }
+  await hook(continuation)
+  assert.equal(continuation.messages.length, 3)
+
+  await compact({ sessionID: "ses_1" })
+
+  const after: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "summary" }] },
+      { role: "tool", content: [] },
+    ],
+  }
+  await hook(after)
+  assert.equal(after.messages.length, 4)
+})
+
+test("closing and reopening the list resets the guard", async () => {
+  const fake = fakeContext()
+  await plugin.setup(fake.context)
+  const hook = fake.hooks.get("context")!
+  const write = fake.tools.get("todowrite")!
+
+  await write.execute({ todos: [{ content: "A", status: "in_progress" }] }, { sessionID: "ses_1" })
+  const fresh: ContextEvent = {
+    sessionID: "ses_1",
+    system: [],
+    messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  }
+  await hook(fresh)
+
+  const continuation = (): ContextEvent => ({
+    sessionID: "ses_1",
+    system: [],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "go" }] },
+      { role: "assistant", content: [{ type: "text", text: "working" }] },
+      { role: "tool", content: [] },
+    ],
+  })
+
+  await write.execute({ todos: [{ content: "A", status: "completed" }] }, { sessionID: "ses_1" })
+  const closed = continuation()
+  await hook(closed)
+  assert.equal(closed.messages.length, 3)
+
+  // Reopening with an identical render still injects: the notice from the
+  // earlier run is no longer in context.
+  await write.execute({ todos: [{ content: "A", status: "in_progress" }] }, { sessionID: "ses_1" })
+  const reopened = continuation()
+  await hook(reopened)
+  assert.equal(reopened.messages.length, 4)
 })
 
 test("todoread reports a running timer for the current run", async () => {
