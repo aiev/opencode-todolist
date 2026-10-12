@@ -56,7 +56,7 @@ test("renderTodoReport counts completed of total and names the current task", ()
   assert.match(report, /Current task: Doing/)
 })
 
-test("renderTodoReport on an empty list is distinguishable from a failed read", () => {
+test("renderTodoReport on an empty list says so", () => {
   assert.equal(renderTodoReport([]), "Todo [0/0]: the todo list is empty.")
 })
 
@@ -65,12 +65,13 @@ test("renderTodoReport says so when nothing is open", () => {
   assert.match(renderTodoReport(todos), /Current task: none/)
 })
 
-test("registerTodoCommand wires /todo to a session prompt", async () => {
-  type Added = {
-    execute: (args: { sessionID: string; prompt: unknown; delivery: unknown }) => Promise<void>
-  }
+type Added = {
+  execute: (args: { sessionID: string; prompt: unknown; delivery: unknown }) => Promise<void>
+}
+
+function fakeCommandCtx(messages: unknown[]) {
   const added: Array<Added> = []
-  const prompted: unknown[] = []
+  const prompted: Array<{ text?: unknown }> = []
   const ctx = {
     command: {
       transform: async (callback: (editor: { add: (cmd: Added) => void }) => void) => {
@@ -79,15 +80,31 @@ test("registerTodoCommand wires /todo to a session prompt", async () => {
       },
     },
     session: {
-      context: async () => [],
-      prompt: async (input: unknown) => { prompted.push(input); return {} },
+      context: async () => messages,
+      prompt: async (input: { text?: unknown }) => { prompted.push(input); return {} },
     },
     storage: { get: async () => undefined },
   } as unknown as Plugin.Context
+  return { ctx, added, prompted }
+}
+
+test("registerTodoCommand wires /todo to a session prompt", async () => {
+  const { ctx, added, prompted } = fakeCommandCtx([])
   const registration = await registerTodoCommand(ctx)
   assert.equal(added.length, 1)
-  await added[0].execute({ sessionID: "ses_1", prompt: {}, delivery: "steady" })
+  await added[0].execute({ sessionID: "ses_1", prompt: {}, delivery: "queue" })
   assert.equal(prompted.length, 1)
+  assert.equal(prompted[0].text, "No todo list found for this session.")
+  await registration.dispose()
+})
+
+test("registerTodoCommand posts the report when the log has a list", async () => {
+  const messages = [message([tool("todowrite", "completed", { todos: [{ content: "Ship it", status: "in_progress" }] })])]
+  const { ctx, added, prompted } = fakeCommandCtx(messages)
+  const registration = await registerTodoCommand(ctx)
+  await added[0].execute({ sessionID: "ses_1", prompt: {}, delivery: "queue" })
+  assert.match(String(prompted[0].text), /^Todo \[0\/1\] - 1 open/)
+  assert.match(String(prompted[0].text), /Current task: Ship it/)
   await registration.dispose()
 })
 

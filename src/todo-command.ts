@@ -45,15 +45,16 @@ export async function registerTodoCommand(
   if (!ctx.command || typeof ctx.command.transform !== "function") {
     return { dispose: noop }
   }
-  const command = await ctx.command.transform((editor) => {    editor.add({
+  const command = await ctx.command.transform((editor) => {
+    editor.add({
       name: "todo",
       description: TODO_COMMAND_DESCRIPTION,
       execute: async ({ sessionID, prompt, delivery }) => {
-        const todos = (await todosFromMessageSources(ctx, sessionID)) ?? []
+        const todos = await todosFromMessageSources(ctx, sessionID)
         await ctx.session.prompt({
           ...prompt,
           sessionID,
-          text: renderTodoReport(todos),
+          text: todos ? renderTodoReport(todos) : "No todo list found for this session.",
           delivery,
         })
       },
