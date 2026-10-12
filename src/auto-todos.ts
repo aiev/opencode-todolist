@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { Plugin } from "@opencode/plugin"
-import { TODO_PRIORITIES, type Todo, type TodoPriority } from "./todos.js"
+import { MAX_TODO_CONTENT_LENGTH, MAX_TODOS, TODO_PRIORITIES, type Todo, type TodoPriority } from "./todos.js"
 
 /**
  * Config-driven todo injection (opencode-auto-todos parity, serkanalgur).
@@ -20,6 +20,10 @@ import { TODO_PRIORITIES, type Todo, type TodoPriority } from "./todos.js"
  * (optional: only inject when an existing item contains this string,
  * case-insensitive), `order` (`"first"` or a 0-based index, default append),
  * `always` (default false: inject only when the incoming list is empty).
+ *
+ * Entries obey the same limits as `todowrite`: content over
+ * `MAX_TODO_CONTENT_LENGTH` is dropped and the merged list never grows past
+ * `MAX_TODOS`.
  *
  * Best-effort throughout: no config file, an unreadable file, or a lookup
  * failure means the model's list passes through untouched.
@@ -48,7 +52,9 @@ export function normalizeAutoTodosConfig(value: unknown): AutoTodosConfig | unde
     if (entry === null || typeof entry !== "object") continue
     const item = entry as { content?: unknown; priority?: unknown; match?: unknown; order?: unknown; always?: unknown }
     if (typeof item.content !== "string" || !item.content.trim()) continue
-    const out: AutoTodoEntry = { content: item.content.trim() }
+    const content = item.content.trim()
+    if (content.length > MAX_TODO_CONTENT_LENGTH) continue
+    const out: AutoTodoEntry = { content }
     if (TODO_PRIORITIES.includes(item.priority as TodoPriority)) {
       out.priority = item.priority as TodoPriority
     }
@@ -100,10 +106,12 @@ export function applyAutoTodos(
   if (!config || config.todos.length === 0) return { todos, injected: 0 }
   const deduplicate = config.deduplicate ?? true
   const merged = todos.map((t) => ({ ...t }))
+  const incomingEmpty = merged.length === 0
   const firsts: Array<Todo> = []
   let injected = 0
   for (const entry of config.todos) {
-    if (!entry.always && merged.length > 0) continue
+    if (!entry.always && !incomingEmpty) continue
+    if (firsts.length + merged.length >= MAX_TODOS) break
     const seen = [...firsts, ...merged]
     if (entry.match && !seen.some((t) => contains(t.content, entry.match as string))) continue
     if (deduplicate && seen.some((t) => contains(t.content, entry.content) || contains(entry.content, t.content))) {
