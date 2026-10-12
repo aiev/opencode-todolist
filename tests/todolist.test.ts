@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { hasOpenTodos, normalizeTodos, parseTodoRecord, renderTodos, storageKey } from "../src/index"
+import { MAX_TODO_CONTENT_LENGTH, MAX_TODOS, hasOpenTodos, normalizeTodos, parseTodoRecord, renderTodos, storageKey } from "../src/index"
 
 test("storageKey scopes todos to the session", () => {
   assert.equal(storageKey("ses_abc"), "todos/ses_abc")
@@ -26,6 +26,24 @@ test("normalizeTodos rejects malformed input", () => {
   assert.throws(() => normalizeTodos({ todos: [{}] }), /content/)
   assert.throws(() => normalizeTodos({ todos: [{ content: "x", status: "done" }] }), /status/)
   assert.throws(() => normalizeTodos({ todos: [{ content: "x", status: "pending", priority: "urgent" }] }), /priority/)
+})
+
+test("normalizeTodos rejects lists over the cap", () => {
+  const atCap = Array.from({ length: MAX_TODOS }, (_, i) => ({ content: `Item ${i}`, status: "pending" }))
+  assert.equal(normalizeTodos({ todos: atCap }).length, MAX_TODOS)
+  assert.throws(
+    () => normalizeTodos({ todos: [...atCap, { content: "One more", status: "pending" }] }),
+    /at most 100/,
+  )
+})
+
+test("normalizeTodos rejects content over the cap", () => {
+  const atCap = { content: "x".repeat(MAX_TODO_CONTENT_LENGTH), status: "pending" }
+  assert.equal(normalizeTodos({ todos: [atCap] }).length, 1)
+  assert.throws(
+    () => normalizeTodos({ todos: [{ content: "x".repeat(MAX_TODO_CONTENT_LENGTH + 1), status: "pending" }] }),
+    /over 500/,
+  )
 })
 
 test("renderTodos renders status marks and priorities", () => {
