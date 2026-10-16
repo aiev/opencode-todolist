@@ -24,7 +24,7 @@ function fakeTodoCtx(messages: unknown[], stored?: unknown) {
   } as unknown as Plugin.Context
 }
 
-test("todosFromMessageSources returns the newest completed todowrite list", async () => {
+test("todosFromMessageSources falls back to the newest completed todowrite list", async () => {
   const messages = [
     message([tool("todowrite", "completed", { todos: [{ content: "New", status: "in_progress" }] }, 2_000)]),
     message([tool("todowrite", "completed", { todos: [{ content: "Old", status: "pending" }] }, 1_000)]),
@@ -39,7 +39,26 @@ test("todosFromMessageSources returns undefined, never [], when there is no list
   assert.equal(await todosFromMessageSources(fakeTodoCtx(messages), "ses_1"), undefined)
 })
 
-test("todosFromMessageSources falls back to same-plugin storage", async () => {
+test("todosFromMessageSources prefers storage over the log when both hold a list", async () => {
+  // The log entry is intentionally newer than the stored record: storage is the
+  // list the todowrite/todoread tools manage, so it wins regardless of timestamps.
+  const messages = [
+    message([tool("todowrite", "completed", { todos: [{ content: "From log", status: "pending" }] }, 3_000)]),
+  ]
+  const stored = { todos: [{ content: "From storage", status: "completed" }], updatedAt: 1_000 }
+  const todos = await todosFromMessageSources(fakeTodoCtx(messages, stored), "ses_1")
+  assert.deepEqual(todos, [{ content: "From storage", status: "completed" }])
+})
+
+test("todosFromMessageSources falls back to the log when the stored record is unusable", async () => {
+  const messages = [
+    message([tool("todowrite", "completed", { todos: [{ content: "From log", status: "pending" }] }, 1_000)]),
+  ]
+  const todos = await todosFromMessageSources(fakeTodoCtx(messages, { broken: true }), "ses_1")
+  assert.deepEqual(todos, [{ content: "From log", status: "pending" }])
+})
+
+test("todosFromMessageSources uses storage when the log has no completed todowrite", async () => {
   const stored = { todos: [{ content: "Stored", status: "pending" }], updatedAt: 1 }
   const todos = await todosFromMessageSources(fakeTodoCtx([], stored), "ses_1")
   assert.equal(todos?.[0].content, "Stored")
