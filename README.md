@@ -136,6 +136,15 @@ To enable the strip, add the package to the terminal client plugin list:
 }
 ```
 
+## Desktop app
+
+The desktop GUI has no plugin-panel API, so the sidebar strip above only appears
+in the terminal client. To get the same list as an always-on-top window in the
+desktop app, there is a small companion project:
+[**opencode-desk-todo**](https://github.com/xuesecangsang-cell/opencode-desk-todo)
+(Windows) — it reads this plugin's list and follows the session/tab you are
+currently looking at.
+
 ## Development
 
 ```bash
